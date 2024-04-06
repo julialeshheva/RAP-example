@@ -1,0 +1,15 @@
+@EndUserText.label: 'access control Travel entityt' 
+@MappingRole: true // is defined at the top to assign the CDS role to every user regardless of the client.
+define role ZI_IU_TRAVEL {
+    grant
+        select
+            on
+                ZI_IU_TRAVEL
+                    where
+                        CurrencyCode = 'EUR'                                                            //PFCG condition
+                        and ( TravelStatus ) = aspect pfcg_auth( ZIU_O_T_ST, ZIU_STATUS, ACTVT = '03' ) // the view element TravelStatus is associated with the appropriate authorization field
+                                                                                                        // also restrict the access control check to users that have the value 03 = displayed
+                        or true ; // workaround  because of ABAP environment trial restrictions
+}
+
+//The name of the CDS role is specified after the DEFINE ROLE statement, the name of protected CDS entity is specified after the GRANT SELECT ON
