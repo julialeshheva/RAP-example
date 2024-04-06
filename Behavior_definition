@@ -1,0 +1,111 @@
+managed;// implementation in class zbp_i_iu_travel unique;
+with draft;
+//strict ( 2 );
+
+define behavior for ZI_IU_TRAVEL alias Travel
+implementation in class ziu_cl_i_travel unique
+persistent table ziu_atravel_db // Database Table Name that allows the managed runtime to perform create, update, and delete operations directly on the DB
+draft table ziu_dtravel_db
+lock master total etag LastChangedAt // specify lock master. In order to identify changes to active instances in cases where the durable lock has expired
+authorization master ( instance ) // declare the travel root node as authorization master. Instance-specific authorization requests are directed to the implementation of the authorization master
+etag master LocalLastChangedAt // we want to make use of the so-called optimistic locking.  it gets automatic updates by the framework and receives a unique value on each update. In this case, you do not have to implement ETag field updates.
+{
+  create;
+  update;
+  delete;
+  association _Booking { create; with draft; }
+
+  field ( numbering : managed, readonly ) TravelUUID; // Managed Runtime provides a key when new instances are created
+  field ( readonly ) TravelID, TotalPrice, TravelStatus; // static field control
+  field ( readonly ) LastChangedAt, LastChangedBy, CreatedAt, CreatedBy, LocalLastChangedAt; // static field control
+  field ( mandatory ) AgencyID, CustomerID;
+
+  action ( features : instance ) acceptTravel result [1] $self; // action with dynamic feature control.Both action return $self with cardinality 1 as the result.
+                                                                //$self means that the instance of the same type is returned on which the operation is performed
+  action ( features : instance ) rejectTravel result [1] $self; // action with dynamic feature control.
+
+  internal action recalcTotalPrice;
+
+  determination setInitStatus on modify { create; } // to set the initial status when a new instance is created.
+                                                     //It triggers when MODIFY Create  operation is performed (EML statement)
+  determination calculateTotalPrice on modify { field BookingFee, CurrencyCode; } //to update the TotalPrice whenever the BookingFee or CurrencyCode are changed
+  determination calculateTravelID on save { create; } // is used to determine the travelID when a new instance is created. It is executed on SAVE
+
+  validation validateAgency on save { field AgencyID; create; } // to validate the input of the fields AgencyID. Triggered on SAVE either the AgencyID was changed
+                                                                //or an instance is created
+  validation validateCustomer on save { field CustomerID; create; } // to validate the input of the fields CustomerID. Triggered on SAVE
+  validation validateDates on save { field BeginDate, EndDate; create; } // to validate the input of the fields BeginDate, EndDate . Triggered on SAVE
+
+ /*
+ When a draft instance is going to be activated,
+the Fiori elemts UI calls the draft determine action 'prepare'
+This call takes place in a separate OData change set
+to allow it to save the sate messages even if the activation fails due to
+failing validations.
+In order to execute our validations during 'prepare',
+we need to assign them to the draft determine action prepare*/
+  draft determine action Prepare {
+  validation validateAgency;
+  validation validateCustomer;
+  validation validateDates;
+  }
+
+  mapping for ziu_atravel_db // we need to define how to map the csd data model fields to the corresponding table fields
+    {
+      TravelUUID         = travel_uuid;
+      TravelID           = travel_id;
+      AgencyID           = agency_id;
+      CustomerID         = customer_id;
+      BeginDate          = begin_date;
+      EndDate            = end_date;
+      BookingFee         = booking_fee;
+      TotalPrice         = total_price;
+      CurrencyCode       = currency_code;
+      Description        = description;
+      TravelStatus       = overall_status;
+      CreatedBy          = created_by;
+      CreatedAt          = created_at;
+      LastChangedBy      = last_changed_by;
+      LastChangedAt      = last_changed_at;
+      LocalLastChangedAt = local_last_changed_at;
+    }
+}
+
+define behavior for ZI_IU_BOOKING alias Booking
+implementation in class ziu_cl_i_booking unique
+persistent table ziu_abook_db
+draft table ziu_dbook_db
+lock dependent by _Travel // the Booking is child node and it is a lock dependent. It is necessary to make use of the association defined on the CDS view
+authorization dependent by _Travel // Modifying requests on the booking entity are directed to the authorization master following the provided association.
+etag master LocalLastChangedAt
+{
+  update;
+  delete;
+  association _Travel { with draft; } // in order to transactional enable the travel association explicitly list it in the Booking entit
+
+  field ( numbering : managed, readonly ) BookingUUID;
+  field ( readonly ) TravelUUID; //TravelUUID in the Booking entity should be set to 'read only' as it is used in the on-condition of the association
+  field ( readonly ) BookingID;
+  field ( readonly ) LastChangedBy, CreatedBy, LocalLastChangedAt; // static field control
+
+  determination calculateBookingID on save { create; }
+  determination calculateTotalPrice on modify { field FlightPrice, CurrencyCode; }
+
+
+  mapping for ziu_abook_db
+    {
+      BookingUUID        = booking_uuid;
+      TravelUUID         = travel_uuid;
+      BookingID          = booking_id;
+      BookingDate        = booking_date;
+      CustomerID         = customer_id;
+      CarrierID          = carrier_id;
+      ConnectionID       = connection_id;
+      FlightDate         = flight_date;
+      FlightPrice        = flight_price;
+      CurrencyCode       = currency_code;
+      CreatedBy          = created_by;
+      LastChangedBy      = last_changed_by;
+      LocalLastChangedAt = local_last_changed_at;
+    }
+}
